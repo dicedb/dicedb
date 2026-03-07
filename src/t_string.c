@@ -352,6 +352,18 @@ void getCommand(client *c) {
     getGenericCommand(c);
 }
 
+/* GET.OBSERVE handler - executes GET logic and sends result */
+void getObserveHandler(client *c) {
+    /* Call the generic GET command - it handles all the logic
+     * including type checking and sending the reply */
+    getGenericCommand(c);
+}
+
+/* GET.OBSERVE <key> */
+void getObserveCommand(client *c) {
+    genericObserveCommand(c, getObserveHandler);
+}
+
 /*
  * GETEX <key> [PERSIST][EX seconds][PX milliseconds][EXAT seconds-timestamp][PXAT milliseconds-timestamp]
  *

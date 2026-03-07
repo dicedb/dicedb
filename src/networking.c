@@ -216,6 +216,7 @@ client *createClient(connection *conn) {
     c->pubsub_channels = dictCreate(&objectKeyPointerValueDictType);
     c->pubsub_patterns = dictCreate(&objectKeyPointerValueDictType);
     c->pubsubshard_channels = dictCreate(&objectKeyPointerValueDictType);
+    c->observe_fingerprints = NULL;
     c->peerid = NULL;
     c->sockname = NULL;
     c->client_list_node = NULL;
@@ -1736,6 +1737,41 @@ void freeClient(client *c) {
     dictRelease(c->pubsub_channels);
     dictRelease(c->pubsub_patterns);
     dictRelease(c->pubsubshard_channels);
+
+    /* Unsubscribe from all fingerprints using a collect-then-act pattern.
+     * We cannot call observeUnsubscribeFingerprint() while iterating the dict
+     * because it calls dictDelete(c->observe_fingerprints, ...), which would
+     * corrupt the iterator. Simply calling dictRelease() is also wrong: it only
+     * frees the client-side dict while leaving dangling pointers in the server's
+     * global structures (server.observe_fingerprints and
+     * server.observe_key_to_fingerprints). observeUnsubscribeFingerprint() must
+     * be called for each fingerprint so it can remove this client from those
+     * global structures and free any observeCommandInfo with no remaining clients.
+     * Keys are pinned with incrRefCount before collection so they survive being
+     * deleted from the dict during unsubscription. */
+    if (c->observe_fingerprints) {
+        list *fingerprints_to_remove = listCreate();
+        dictIterator *di = dictGetIterator(c->observe_fingerprints);
+        dictEntry *de;
+        while ((de = dictNext(di)) != NULL) {
+            robj *fingerprint_obj = dictGetKey(de);
+            listAddNodeTail(fingerprints_to_remove, fingerprint_obj);
+            incrRefCount(fingerprint_obj);
+        }
+        dictReleaseIterator(di);
+        
+        /* Now unsubscribe from each fingerprint */
+        listNode *ln;
+        listIter li;
+        listRewind(fingerprints_to_remove, &li);
+        while ((ln = listNext(&li))) {
+            robj *fingerprint_obj = ln->value;
+            observeUnsubscribeFingerprint(c, fingerprint_obj);
+            decrRefCount(fingerprint_obj);
+        }
+        listRelease(fingerprints_to_remove);
+    }
+    unmarkClientAsObserving(c);
 
     /* Free data structures. */
     listRelease(c->reply);
@@ -3347,6 +3383,7 @@ sds catClientInfoString(sds s, client *client, int hide_user_data) {
         " ssub=%i", (int) dictSize(client->pubsubshard_channels),
         " multi=%i", (client->flag.multi) ? client->mstate.count : -1,
         " watch=%i", (int) listLength(client->watched_keys),
+        " observing=%i", client->observe_fingerprints ? (int) dictSize(client->observe_fingerprints) : 0,
         " qbuf=%U", client->querybuf ? (unsigned long long) sdslen(client->querybuf) : 0,
         " qbuf-free=%U", client->querybuf ? (unsigned long long) sdsavail(client->querybuf) : 0,
         " argv-mem=%U", (unsigned long long) client->argv_len_sum,

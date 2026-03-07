@@ -124,6 +124,7 @@ static struct config {
     pthread_mutex_t liveclients_mutex;
     pthread_mutex_t is_updating_slots_mutex;
     int resp3; /* use RESP3 */
+    int with_hiredis; /* use hiredis blocking client for benchmarking */
 } config;
 
 typedef struct _client {
@@ -185,6 +186,8 @@ typedef struct serverConfig {
 /* Prototypes */
 static void writeHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 static void createMissingClients(client c);
+static void benchmark(const char *title, char *cmd, int len);
+static void benchmarkWithHiredis(const char *title, char *cmd, int len);
 static benchmarkThread *createBenchmarkThread(int index);
 static void freeBenchmarkThread(benchmarkThread *thread);
 static void freeBenchmarkThreads(void);
@@ -964,6 +967,143 @@ static void benchmark(const char *title, char *cmd, int len) {
     if (config.latency_histogram) hdr_close(config.latency_histogram);
 }
 
+__attribute__((unused))
+static void benchmarkWithHiredis(const char *title, char *cmd, int len) {
+    int i, j;
+    long long start, latency;
+    redisContext **clients;
+    int requests_per_client;
+    
+    config.title = title;
+    config.requests_issued = 0;
+    config.requests_finished = 0;
+    config.previous_requests_finished = 0;
+    config.last_printed_bytes = 0;
+    config.previous_tick = mstime();
+    
+    hdr_init(CONFIG_LATENCY_HISTOGRAM_MIN_VALUE,
+             CONFIG_LATENCY_HISTOGRAM_MAX_VALUE,
+             config.precision,
+             &config.latency_histogram);
+    hdr_init(CONFIG_LATENCY_HISTOGRAM_MIN_VALUE,
+             CONFIG_LATENCY_HISTOGRAM_INSTANT_MAX_VALUE,
+             config.precision,
+             &config.current_sec_latency_histogram);
+    
+    /* Create synchronous connections */
+    clients = zmalloc(sizeof(redisContext*) * config.numclients);
+    config.liveclients = 0;
+    for (i = 0; i < config.numclients; i++) {
+        clients[i] = getRedisContext(config.conn_info.hostip, config.conn_info.hostport, config.hostsocket);
+        if (clients[i] == NULL) {
+            fprintf(stderr, "Failed to create client %d\n", i);
+            exit(1);
+        }
+        config.liveclients++;
+        
+        /* Select DB if needed */
+        if (config.conn_info.input_dbnum != 0) {
+            redisReply *reply = redisCommand(clients[i], "SELECT %d", config.conn_info.input_dbnum);
+            if (reply) freeReplyObject(reply);
+        }
+        
+        /* Enable tracking if needed */
+        if (config.enable_tracking) {
+            redisReply *reply = redisCommand(clients[i], "CLIENT TRACKING on");
+            if (reply) freeReplyObject(reply);
+        }
+    }
+    
+    /* Calculate requests per client */
+    requests_per_client = config.requests / config.numclients;
+    int remaining_requests = config.requests % config.numclients;
+    
+    config.start = mstime();
+    
+    /* Execute commands using each client */
+    for (i = 0; i < config.numclients; i++) {
+        int client_requests = requests_per_client + (i < remaining_requests ? 1 : 0);
+        
+        for (j = 0; j < client_requests; j++) {
+            char *cmd_copy = zmalloc(len);
+            memcpy(cmd_copy, cmd, len);
+            
+            /* Replace __rand_int__ with random value if needed */
+            if (config.randomkeys) {
+                /* For protocol-formatted commands, we need to search within the actual data */
+                char *p = cmd_copy;
+                char *end = cmd_copy + len;
+                while (p < end - 11) {
+                    if (memcmp(p, "__rand_int__", 12) == 0) {
+                        char randstr[13];
+                        long long r = config.randomkeys_keyspacelen ? (random() % config.randomkeys_keyspacelen) : random();
+                        snprintf(randstr, sizeof(randstr), "%012lld", r);
+                        memcpy(p, randstr, 12);
+                        p += 12;
+                    } else {
+                        p++;
+                    }
+                }
+            }
+            
+            /* Execute command and measure latency */
+            start = ustime();
+            redisReply *reply;
+            
+            /* Send raw protocol command using redisAppendFormattedCommand + redisGetReply */
+            if (redisAppendFormattedCommand(clients[i], cmd_copy, len) != REDIS_OK) {
+                fprintf(stderr, "Failed to append command: %s\n", clients[i]->errstr);
+                exit(1);
+            }
+            
+            if (redisGetReply(clients[i], (void**)&reply) != REDIS_OK) {
+                fprintf(stderr, "Failed to get reply: %s\n", clients[i]->errstr);
+                exit(1);
+            }
+            
+            latency = ustime() - start;
+            
+            if (reply == NULL) {
+                fprintf(stderr, "Error: %s\n", clients[i]->errstr);
+                exit(1);
+            }
+            if (reply->type == REDIS_REPLY_ERROR) {
+                fprintf(stderr, "Error reply: %s\n", reply->str);
+                freeReplyObject(reply);
+                exit(1);
+            }
+            
+            freeReplyObject(reply);
+            zfree(cmd_copy);
+            
+            /* Record latency */
+            hdr_record_value(config.latency_histogram, latency);
+            hdr_record_value(config.current_sec_latency_histogram, latency);
+            
+            config.requests_finished++;
+            config.requests_issued++;
+            
+            /* Show progress periodically (without event loop) */
+            if (!config.quiet && config.requests_finished % 10000 == 0) {
+                printf("completed %d/%d requests\r", config.requests_finished, config.requests);
+                fflush(stdout);
+            }
+        }
+    }
+    
+    config.totlatency = mstime() - config.start;
+    
+    /* Clean up */
+    for (i = 0; i < config.numclients; i++) {
+        redisFree(clients[i]);
+    }
+    zfree(clients);
+    
+    showLatencyReport();
+    if (config.current_sec_latency_histogram) hdr_close(config.current_sec_latency_histogram);
+    if (config.latency_histogram) hdr_close(config.latency_histogram);
+}
+
 /* Thread functions. */
 
 static benchmarkThread *createBenchmarkThread(int index) {
@@ -1464,6 +1604,8 @@ int parseOptions(int argc, char **argv) {
             config.cluster_mode = 1;
         } else if (!strcmp(argv[i], "--enable-tracking")) {
             config.enable_tracking = 1;
+        } else if (!strcmp(argv[i], "--with-hiredis")) {
+            config.with_hiredis = 1;
         } else if (!strcmp(argv[i], "--help")) {
             exit_status = 0;
             goto usage;
@@ -1561,6 +1703,7 @@ usage:
 "                    mode, the key must contain \"{tag}\". Otherwise, the\n"
 "                    command will not be sent to the right cluster node.\n"
 " --enable-tracking  Send CLIENT TRACKING on before starting benchmark.\n"
+" --with-hiredis     [DONT USE] Use hiredis blocking client for benchmarking.\n"
 " -k <boolean>       1=keep alive 0=reconnect (default 1)\n"
 " -r <keyspacelen>   Use random keys for SET/GET/INCR, random values for SADD,\n"
 "                    random members and scores for ZADD.\n"
@@ -1711,6 +1854,7 @@ int main(int argc, char **argv) {
     config.slots_last_update = 0;
     config.enable_tracking = 0;
     config.resp3 = 0;
+    config.with_hiredis = 0;
 
     i = parseOptions(argc, argv);
     argc -= i;

@@ -1189,6 +1189,7 @@ typedef struct ClientFlags {
     uint64_t pre_psync : 1;           /* Instance don't understand PSYNC. */
     uint64_t readonly : 1;            /* Cluster client is in read-only state. */
     uint64_t pubsub : 1;              /* Client is in Pub/Sub mode. */
+    uint64_t observing : 1;            /* Client is in observe mode. */
     uint64_t prevent_aof_prop : 1;    /* Don't propagate to AOF. */
     uint64_t prevent_repl_prop : 1;   /* Don't propagate to replicas. */
     uint64_t prevent_prop : 1;        /* Don't propagate to AOF or replicas. */
@@ -1334,6 +1335,7 @@ typedef struct client {
     dict *pubsub_channels;               /* channels a client is interested in (SUBSCRIBE) */
     dict *pubsub_patterns;               /* patterns a client is interested in (PSUBSCRIBE) */
     dict *pubsubshard_channels;          /* shard level channels a client is interested in (SSUBSCRIBE) */
+    dict *observe_fingerprints;          /* command fingerprints this client is subscribed to */
     sds peerid;                          /* Cached peer ID. */
     sds sockname;                        /* Cached connection target address. */
     listNode *client_list_node;          /* list node in client list */
@@ -2160,6 +2162,15 @@ struct valkeyServer {
     kvstore *pubsubshard_channels; /* Map shard channels in every slot to list of subscribed clients */
     unsigned int pubsub_clients;   /* # of clients in Pub/Sub mode */
     unsigned int watching_clients; /* # of clients are watching keys */
+    
+    /* Observe */
+    dict *observe_fingerprints;           /* Map fingerprints to follow command info */
+    dict *observe_key_to_fingerprints;    /* Map keys to list of fingerprints observing them */
+    unsigned int observing_clients;       /* # of clients using .OBSERVE commands */
+
+    dict *observe_debounce_buffer;        /* Buffer of keys that need observe notifications */
+    unsigned int observe_debounce_period;     /* Debounce period in milliseconds */
+
     /* Cluster */
     int cluster_enabled;            /* Is cluster enabled? */
     int cluster_port;               /* Set the cluster port for a node. */
@@ -2649,6 +2660,7 @@ extern struct valkeyServer server;
 extern struct sharedObjectsStruct shared;
 extern dictType objectKeyPointerValueDictType;
 extern dictType objectKeyHeapPointerValueDictType;
+extern dictType observeDebounceBufferDictType;
 extern dictType setDictType;
 extern dictType BenchmarkDictType;
 extern dictType zsetDictType;
@@ -3423,9 +3435,47 @@ int serverPubsubSubscriptionCount(void);
 int serverPubsubShardSubscriptionCount(void);
 size_t pubsubMemOverhead(client *c);
 void unmarkClientAsPubSub(client *c);
+void unmarkClientAsObserving(client *c);
 int pubsubTotalSubscriptions(void);
 dict *getClientPubSubChannels(client *c);
 dict *getClientPubSubShardChannels(client *c);
+
+/* Observe */
+typedef struct observeCommandInfo {
+    sds command;          /* Command name (e.g., "GET.OBSERVE", "ZRANGE.OBSERVE") */
+    int argc;             /* Number of arguments */
+    robj **argv;          /* Command arguments */
+    robj *key;            /* The key being followed */
+    list *clients;        /* List of clients subscribed to this fingerprint */
+} observeCommandInfo;
+
+typedef struct observeDebounceKey {
+    robj *key;            /* The key that changed */
+    int dbid;             /* Database ID where the key changed */
+    mstime_t timestamp;   /* When the key was first added to buffer */
+} observeDebounceKey;
+
+typedef void (*observeCommandHandler)(client *c);
+void genericObserveCommand(client *c, observeCommandHandler handler);
+void genericExecuteObserveNotification(client *c, observeCommandHandler handler, sds fingerprint);
+void executeObserveCommand(observeCommandInfo *observeInfo, robj *fingerprint_obj, int dbid);
+
+/* Observe command handlers - defined in their respective modules */
+void getObserveHandler(client *c);
+void zrangeObserveHandler(client *c);
+
+/* Observe */
+sds generateCommandFingerprint(client *c);
+int observeSubscribeFingerprint(client *c, sds fingerprint, robj *key);
+void observeUnsubscribeFingerprint(client *c, robj *fingerprint_obj);
+void observeNotifyKeyChange(robj *key, int dbid);
+void observeDebounceFlush(void);
+int observeDebounceTimerHandler(struct aeEventLoop *eventLoop, long long id, void *clientData);
+void startObserveDebounceProc(void);
+void observeDebounceKeyChange(robj *key, int dbid);
+void initObserveDebounce(void);
+void freeObserveDebounceKey(observeDebounceKey *odk);
+void unobserveCommand(client *c);
 
 /* Keyspace events notification */
 void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid);
@@ -3661,6 +3711,7 @@ unsigned long evalScriptsMemory(void);
 uint64_t evalGetCommandFlags(client *c, uint64_t orig_flags);
 uint64_t fcallGetCommandFlags(client *c, uint64_t orig_flags);
 int isInsideYieldingLongCommand(void);
+int isObserveCommand(struct serverCommand *cmd);
 
 typedef struct luaScript {
     uint64_t flags;
@@ -3998,6 +4049,10 @@ void lcsCommand(client *c);
 void quitCommand(client *c);
 void resetCommand(client *c);
 void failoverCommand(client *c);
+
+/* Observe Commands */
+void getObserveCommand(client *c);
+void zrangeObserveCommand(client *c);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__((deprecated));

@@ -660,6 +660,7 @@ long long dbTotalServerKeyCount(void) {
 void signalModifiedKey(client *c, serverDb *db, robj *key) {
     touchWatchedKey(db, key);
     trackingInvalidateKey(c, key, 1);
+    observeNotifyKeyChange(key, db->id);
 }
 
 void signalFlushedDb(int dbid, int async) {

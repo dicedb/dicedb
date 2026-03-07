@@ -3134,6 +3134,17 @@ void zrangeCommand(client *c) {
     zrangeGenericCommand(&handler, 1, 0, ZRANGE_AUTO, ZRANGE_DIRECTION_AUTO);
 }
 
+/* ZRANGE.OBSERVE handler - executes ZRANGE logic and sends result */
+void zrangeObserveHandler(client *c) {
+    /* Call the zrangeCommand directly - it handles all the logic */
+    zrangeCommand(c);
+}
+
+/* ZRANGE.OBSERVE <key> <start> <stop> [BYSCORE | BYLEX] [REV] [LIMIT offset count] [WITHSCORES] */
+void zrangeObserveCommand(client *c) {
+    genericObserveCommand(c, zrangeObserveHandler);
+}
+
 /* ZREVRANGE <key> <start> <stop> [WITHSCORES] */
 void zrevrangeCommand(client *c) {
     zrange_result_handler handler;

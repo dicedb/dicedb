@@ -198,6 +198,37 @@ proc ::valkey::__method__read {id fd} {
     ::valkey::valkey_read_reply $id $fd
 }
 
+# Read a reply, but return {} if no data arrives within timeout_ms milliseconds.
+proc ::valkey::__method__read_timeout {id fd timeout_ms} {
+    set varname ::valkey::read_timeout_result_$id
+    set $varname __waiting__
+
+    set timer_id [after $timeout_ms [list set $varname __timeout__]]
+    fileevent $fd readable [list ::valkey::__read_timeout_handler__ $id $fd $varname]
+
+    vwait $varname
+
+    after cancel $timer_id
+    fileevent $fd readable {}
+
+    set result [set $varname]
+    unset $varname
+
+    if {$result eq "__timeout__"} {
+        return {}
+    }
+    return $result
+}
+
+proc ::valkey::__read_timeout_handler__ {id fd varname} {
+    fileevent $fd readable {}
+    if {[catch {::valkey::valkey_read_reply $id $fd} reply]} {
+        set $varname __timeout__
+    } else {
+        set $varname $reply
+    }
+}
+
 proc ::valkey::__method__rawread {id fd {len -1}} {
     return [valkey_safe_read $fd $len]
 }

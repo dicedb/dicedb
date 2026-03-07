@@ -452,6 +452,24 @@ dictType objectKeyHeapPointerValueDictType = {
     NULL                  /* allow to expand */
 };
 
+static void observeDebounceKeyDestructor(dict *d, void *val) {
+    UNUSED(d);
+    observeDebounceKey *odk = (observeDebounceKey*)val;
+    if (odk) {
+        if (odk->key) decrRefCount(odk->key);
+        zfree(odk);
+    }
+}
+
+dictType observeDebounceBufferDictType = {
+    dictEncObjHash,              /* hash function */
+    NULL,                        /* key dup */
+    dictEncObjKeyCompare,        /* key compare */
+    dictObjectDestructor,        /* key destructor */
+    observeDebounceKeyDestructor,  /* val destructor */
+    NULL                         /* allow to expand */
+};
+
 /* Set dictionary type. Keys are SDS strings, values are not used. */
 dictType setDictType = {
     dictSdsHash,       /* hash function */
@@ -685,6 +703,16 @@ int isMutuallyExclusiveChildType(int type) {
 /* Returns true when we're inside a long command that yielded to the event loop. */
 int isInsideYieldingLongCommand(void) {
     return scriptIsTimedout() || server.busy_module_yield_flags;
+}
+
+/* Check if a command is an OBSERVE variant (ends with .OBSERVE) */
+int isObserveCommand(struct serverCommand *cmd) {
+    if (!cmd || !cmd->fullname) return 0;
+    size_t len = strlen(cmd->fullname);
+    const char *suffix = ".observe";
+    size_t suffix_len = 8;
+    if (len < suffix_len) return 0;
+    return strcasecmp(cmd->fullname + len - suffix_len, suffix) == 0;
 }
 
 /* Return true if this instance has persistence completely turned off:
@@ -2671,7 +2699,11 @@ void initServer(void) {
     server.pubsubshard_channels = kvstoreCreate(&kvstoreChannelDictType, slot_count_bits,
                                                 KVSTORE_ALLOCATE_DICTS_ON_DEMAND | KVSTORE_FREE_EMPTY_DICTS);
     server.pubsub_clients = 0;
+    server.observe_fingerprints = NULL;
+    server.observe_key_to_fingerprints = NULL;
     server.watching_clients = 0;
+    server.observing_clients = 0;
+    server.observe_debounce_buffer = NULL;
     server.cronloops = 0;
     server.in_exec = 0;
     server.busy_module_yield_flags = BUSY_MODULE_YIELD_NONE;
@@ -4089,6 +4121,21 @@ int processCommand(client *c) {
         return C_OK;
     }
 
+    /* Only allow a subset of commands in the context of OBSERVE if the
+     * connection is in RESP2 mode. With RESP3 there are no limits. */
+    if ((c->flag.observing && c->resp == 2) &&
+        c->cmd->proc != pingCommand &&
+        c->cmd->proc != quitCommand &&
+        c->cmd->proc != resetCommand &&
+        c->cmd->proc != unobserveCommand &&
+        !isObserveCommand(c->cmd)) {
+        rejectCommandFormat(c,
+                            "Can't execute '%s': only *.OBSERVE / "
+                            "UNOBSERVE / PING / QUIT / RESET are allowed in this context",
+                            c->cmd->fullname);
+        return C_OK;
+    }
+
     /* Only allow commands with flag "t", such as INFO, REPLICAOF and so on,
      * when replica-serve-stale-data is no and we are a replica with a broken
      * link with primary. */
@@ -5351,7 +5398,8 @@ void releaseInfoSectionDict(dict *sec) {
  * The resulting dictionary should be released with releaseInfoSectionDict. */
 dict *genInfoSectionDict(robj **argv, int argc, char **defaults, int *out_all, int *out_everything) {
     char *default_sections[] = {"server", "clients",     "memory",     "persistence", "stats",    "replication",
-                                "cpu",    "module_list", "errorstats", "cluster",     "keyspace", NULL};
+                                "cpu",    "module_list", "errorstats", "cluster",     "keyspace", "observe",
+                                NULL};
     if (!defaults) defaults = default_sections;
 
     if (argc == 0) {
@@ -5505,6 +5553,7 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
             "tracking_clients:%d\r\n", server.tracking_clients,
             "pubsub_clients:%d\r\n", server.pubsub_clients,
             "watching_clients:%d\r\n", server.watching_clients,
+            "observing_clients:%d\r\n", server.observing_clients,
             "clients_in_timeout_table:%llu\r\n", (unsigned long long) raxSize(server.clients_timeout_table),
             "total_watched_keys:%lu\r\n", watched_keys,
             "total_blocking_keys:%lu\r\n", blocking_keys,
@@ -5780,6 +5829,50 @@ sds genValkeyInfoString(dict *section_dict, int all_sections, int everything) {
             "instantaneous_eventloop_duration_usec:%llu\r\n", getInstantaneousMetric(STATS_METRIC_EL_DURATION)));
         info = genValkeyInfoStringACLStats(info);
         /* clang-format on */
+    }
+
+    /* Observe */
+    if (all_sections || (dictFind(section_dict, "observe") != NULL)) {
+        if (sections++) info = sdscat(info, "\r\n");
+        
+        /* Count total active watch commands */
+        unsigned long total_observe_commands = 0;
+        unsigned long total_observe_keys = 0;
+        unsigned long total_observe_subscriptions = 0;
+        
+        if (server.observe_fingerprints) {
+            total_observe_commands = dictSize(server.observe_fingerprints);
+            
+            /* Count total subscriptions across all watch commands */
+            dictIterator *di = dictGetSafeIterator(server.observe_fingerprints);
+            dictEntry *de;
+            while ((de = dictNext(di)) != NULL) {
+                observeCommandInfo *observeInfo = dictGetVal(de);
+                if (observeInfo && observeInfo->clients) {
+                    total_observe_subscriptions += listLength(observeInfo->clients);
+                }
+            }
+            dictReleaseIterator(di);
+        }
+        
+        if (server.observe_key_to_fingerprints) {
+            total_observe_keys = dictSize(server.observe_key_to_fingerprints);
+        }
+        
+        /* Count active watch connections across all clients */
+        listIter li;
+        listRewind(server.clients, &li);
+        
+        info = sdscatprintf(info,
+            "# Observe\r\n"
+            "observe_connections:%lu\r\n"
+            "observe_commands_active:%lu\r\n"
+            "observe_keys_tracked:%lu\r\n"
+            "observe_total_subscriptions:%lu\r\n",
+            (unsigned long)server.observing_clients,
+            total_observe_commands,
+            total_observe_keys,
+            total_observe_subscriptions);
     }
 
     /* Replication */
