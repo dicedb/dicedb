@@ -25,8 +25,7 @@ void unmarkClientAsObserving(client *c) {
 void genericObserveCommand(client *c, observeCommandHandler handler) {
     /* Check if blocking is allowed */
     if (c->flag.deny_blocking && !c->flag.multi) {
-        addReplyErrorFormat(c, "%s.OBSERVE isn't allowed for a DENY BLOCKING client",
-                           (char *)c->argv[0]->ptr);
+        addReplyError(c, "OBSERVE isn't allowed for a DENY BLOCKING client");
         return;
     }
     
@@ -45,7 +44,7 @@ void genericObserveCommand(client *c, observeCommandHandler handler) {
     else
         addReplyPushLen(c, 5);
     
-    addReplyBulkCString(c, ".observe");
+    addReplyBulkCString(c, "observe");
     addReplyBulkCString(c, "fingerprint");
     addReplyBulkCString(c, fingerprint);
     addReplyBulkCString(c, "result");
@@ -75,7 +74,7 @@ void genericExecuteObserveNotification(client *c, observeCommandHandler handler,
     else
         addReplyPushLen(c, 5);
     
-    addReplyBulkCString(c, ".observe");
+    addReplyBulkCString(c, "observe");
     addReplyBulkCString(c, "fingerprint");
     addReplyBulkCString(c, fingerprint);
     addReplyBulkCString(c, "result");
@@ -84,6 +83,13 @@ void genericExecuteObserveNotification(client *c, observeCommandHandler handler,
     handler(c);
     
     if (!old_flags.pushing) c->flag.pushing = 0;
+}
+
+/* Map a command name to its observe handler */
+static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
+    if (!strcasecmp(cmd_name, "GET")) return getCommand;
+    if (!strcasecmp(cmd_name, "ZRANGE")) return zrangeCommand;
+    return NULL;
 }
 
 /* Execute a observe command and send results to all subscribed clients */
@@ -100,6 +106,10 @@ void executeObserveCommand(observeCommandInfo *observeInfo, robj *fingerprint_ob
         return;
     }
 
+    /* Find the appropriate handler based on stored command name */
+    observeCommandHandler handler = findHandlerForCommand(observeInfo->command);
+    if (!handler) return;
+
     listRewind(observeInfo->clients, &li);
     while ((ln = listNext(&li))) {
         c = ln->value;
@@ -111,34 +121,49 @@ void executeObserveCommand(observeCommandInfo *observeInfo, robj *fingerprint_ob
         robj **orig_argv = c->argv;
         int orig_argc = c->argc;
 
-        /* Set up command execution */
+        /* Set up command execution with stored argv (already shifted, argv[0]=cmd, argv[1]=key) */
         c->argv = observeInfo->argv;
         c->argc = observeInfo->argc;
 
-        /* Get the base command name (without .OBSERVE suffix) */
-        sds base_cmd = sdsdup(observeInfo->command);
-        char *dot = strchr(base_cmd, '.');
-        if (dot) *dot = '\0';
-
-        /* Find the appropriate handler based on command */
-        observeCommandHandler handler = NULL;
-        if (!strcasecmp(base_cmd, "GET")) {
-            handler = getObserveHandler;
-        } else if (!strcasecmp(base_cmd, "ZRANGE")) {
-            handler = zrangeObserveHandler;
-        }
-        /* Add more handlers here as needed */
-
-        if (handler) {
-            genericExecuteObserveNotification(c, handler, fingerprint_obj->ptr);
-        }
-
-        sdsfree(base_cmd);
+        genericExecuteObserveNotification(c, handler, fingerprint_obj->ptr);
 
         /* Restore client state */
         c->argv = orig_argv;
         c->argc = orig_argc;
     }
+}
+
+/* OBSERVE <cmd> <key> [args...] - Subscribe to real-time updates for a read-only command */
+void observeCommand(client *c) {
+    if (c->argc < 3) {
+        addReplyError(c, "wrong number of arguments for 'OBSERVE' command");
+        return;
+    }
+
+    if (c->flag.deny_blocking && !c->flag.multi) {
+        addReplyError(c, "OBSERVE isn't allowed for a DENY BLOCKING client");
+        return;
+    }
+
+    /* Look up handler for the sub-command */
+    sds cmd_name = c->argv[1]->ptr;
+    observeCommandHandler handler = findHandlerForCommand(cmd_name);
+    if (!handler) {
+        addReplyErrorFormat(c, "OBSERVE not supported for '%s'", (char *)c->argv[1]->ptr);
+        return;
+    }
+
+    /* Temporarily shift argv to skip "OBSERVE": argv[0]=cmd, argv[1]=key, ... */
+    robj **orig_argv = c->argv;
+    int orig_argc = c->argc;
+    c->argv = c->argv + 1;
+    c->argc = c->argc - 1;
+
+    genericObserveCommand(c, handler);
+
+    /* Restore argv */
+    c->argv = orig_argv;
+    c->argc = orig_argc;
 }
 
 /* Generate a fingerprint (hash) for a command with its arguments */

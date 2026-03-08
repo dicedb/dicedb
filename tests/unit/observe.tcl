@@ -1,17 +1,17 @@
 # Observe Command Integration Tests
-# Tests the .OBSERVE functionality for various commands
+# Tests the OBSERVE functionality for various commands
 
 start_server {tags {"observe"}} {
-    test "GET.OBSERVE - Basic functionality" {
+    test "OBSERVE GET - Basic functionality" {
         r SELECT 0
         # Set initial value
         r SET basic_k "initial_value"
 
         # Start observing the key
-        set observe_id [r GET.OBSERVE basic_k]
+        set observe_id [r OBSERVE GET basic_k]
 
         # Verify initial observe response format
-        assert_equal [lindex $observe_id 0] ".observe"
+        assert_equal [lindex $observe_id 0] "observe"
         assert_equal [lindex $observe_id 1] "fingerprint"
         set fingerprint [lindex $observe_id 2]
         assert_equal [lindex $observe_id 3] "result"
@@ -26,7 +26,7 @@ start_server {tags {"observe"}} {
 
         # Should receive notification
         set notification [r read]
-        assert_equal [lindex $notification 0] ".observe"
+        assert_equal [lindex $notification 0] "observe"
         assert_equal [lindex $notification 1] "fingerprint"
         assert_equal [lindex $notification 2] $fingerprint
         assert_equal [lindex $notification 3] "result"
@@ -38,7 +38,7 @@ start_server {tags {"observe"}} {
         $rd2 close
     }
 
-    test "GET.OBSERVE - Multiple clients observing same key" {
+    test "OBSERVE GET - Multiple clients observing same key" {
         r SELECT 0
         r SET multi_k "value1"
 
@@ -51,11 +51,11 @@ start_server {tags {"observe"}} {
         $rd2 SELECT 0
         $rd2 read
 
-        $rd1 GET.OBSERVE multi_k
+        $rd1 OBSERVE GET multi_k
         set observe1 [$rd1 read]
         set fingerprint1 [lindex $observe1 2]
 
-        $rd2 GET.OBSERVE multi_k
+        $rd2 OBSERVE GET multi_k
         set observe2 [$rd2 read]
         set fingerprint2 [lindex $observe2 2]
 
@@ -81,7 +81,7 @@ start_server {tags {"observe"}} {
         $rd2 close
     }
 
-    test "GET.OBSERVE - Different keys have different fingerprints" {
+    test "OBSERVE GET - Different keys have different fingerprints" {
         r SELECT 0
         r SET diff_k1 "value1"
         r SET diff_k2 "value2"
@@ -90,11 +90,11 @@ start_server {tags {"observe"}} {
         $rd SELECT 0
         $rd read
 
-        $rd GET.OBSERVE diff_k1
+        $rd OBSERVE GET diff_k1
         set observe1 [$rd read]
         set fingerprint1 [lindex $observe1 2]
 
-        $rd GET.OBSERVE diff_k2
+        $rd OBSERVE GET diff_k2
         set observe2 [$rd read]
         set fingerprint2 [lindex $observe2 2]
 
@@ -106,17 +106,17 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "ZRANGE.OBSERVE - Basic functionality" {
+    test "OBSERVE ZRANGE - Basic functionality" {
         r SELECT 0
         r ZADD zrng_zset 1 "one" 2 "two" 3 "three"
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd ZRANGE.OBSERVE zrng_zset 0 -1
+        $rd OBSERVE ZRANGE zrng_zset 0 -1
         set observe [$rd read]
 
-        assert_equal [lindex $observe 0] ".observe"
+        assert_equal [lindex $observe 0] "observe"
         set fingerprint [lindex $observe 2]
         set initial_result [lindex $observe 4]
         assert_equal $initial_result {one two three}
@@ -135,7 +135,7 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "ZRANGE.OBSERVE - With WITHSCORES" {
+    test "OBSERVE ZRANGE - With WITHSCORES" {
         r SELECT 0
         r DEL zws_zset
         r ZADD zws_zset 1 "one" 2 "two"
@@ -143,7 +143,7 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd ZRANGE.OBSERVE zws_zset 0 -1 WITHSCORES
+        $rd OBSERVE ZRANGE zws_zset 0 -1 WITHSCORES
         set observe [$rd read]
 
         set initial_result [lindex $observe 4]
@@ -168,7 +168,7 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE unsub_k
+        $rd OBSERVE GET unsub_k
         $rd read
 
         set info1 [r CLIENT LIST]
@@ -193,7 +193,7 @@ start_server {tags {"observe"}} {
         set rd0 [valkey_deferring_client]
         $rd0 SELECT 0
         $rd0 read
-        $rd0 GET.OBSERVE dbsw_k
+        $rd0 OBSERVE GET dbsw_k
         set k0 [$rd0 read]
         assert_equal [lindex $k0 4] "db0_value"
 
@@ -201,7 +201,7 @@ start_server {tags {"observe"}} {
         set rd1 [valkey_deferring_client]
         $rd1 SELECT 1
         $rd1 read
-        $rd1 GET.OBSERVE dbsw_k
+        $rd1 OBSERVE GET dbsw_k
         set observe1 [$rd1 read]
         assert_equal [lindex $observe1 4] "db1_value"
 
@@ -245,7 +245,7 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE dbnc_k
+        $rd OBSERVE GET dbnc_k
         $rd read
 
         # Make multiple rapid changes
@@ -273,7 +273,7 @@ start_server {tags {"observe"}} {
             set rd [valkey_deferring_client]
             $rd SELECT 0
             $rd read
-            $rd GET.OBSERVE memc_k$i
+            $rd OBSERVE GET memc_k$i
             set obs [$rd read]
             lappend clients [list $rd [lindex $obs 2]]
         }
@@ -304,9 +304,9 @@ start_server {tags {"observe"}} {
         $rd SELECT 0
         $rd read
 
-        $rd GET.OBSERVE exp_k
+        $rd OBSERVE GET exp_k
         set observe [$rd read]
-        assert_equal [lindex $observe 0] ".observe"
+        assert_equal [lindex $observe 0] "observe"
         assert_equal [lindex $observe 4] "value"
 
         # Wait for key to expire
@@ -332,7 +332,7 @@ start_server {tags {"observe"}} {
             set rd [valkey_deferring_client]
             $rd SELECT 0
             $rd read
-            $rd GET.OBSERVE fpc_k
+            $rd OBSERVE GET fpc_k
             set observe [$rd read]
             lappend fingerprints [lindex $observe 2]
             $rd UNOBSERVE [lindex $observe 2]
@@ -364,10 +364,10 @@ start_server {tags {"observe"}} {
         $rd2 SELECT 0
         $rd2 read
 
-        $rd1 GET.OBSERVE cx_str
+        $rd1 OBSERVE GET cx_str
         $rd1 read
 
-        $rd2 ZRANGE.OBSERVE cx_zset 0 -1
+        $rd2 OBSERVE ZRANGE cx_zset 0 -1
         $rd2 read
 
         # Perform various operations
@@ -400,10 +400,10 @@ start_server {tags {"observe"}} {
         $rd SELECT 0
         $rd read
 
-        # Issue GET.OBSERVE to enter observing mode
-        $rd GET.OBSERVE rstr_k1
+        # Issue OBSERVE GET to enter observing mode
+        $rd OBSERVE GET rstr_k1
         set observe [$rd read]
-        assert_equal [lindex $observe 0] ".observe"
+        assert_equal [lindex $observe 0] "observe"
 
         $rd SET rstr_k2 "value2"
         assert_error "*Can't execute 'set'*" {$rd read}
@@ -425,18 +425,18 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE wl_k1
+        $rd OBSERVE GET wl_k1
         $rd read
 
         # Test PING
         $rd PING
         assert_equal [$rd read] "PONG"
 
-        # Test another .OBSERVE command (should work)
+        # Test another OBSERVE command (should work)
         r SET wl_k2 "value2"
-        $rd GET.OBSERVE wl_k2
+        $rd OBSERVE GET wl_k2
         set observe2 [$rd read]
-        assert_equal [lindex $observe2 0] ".observe"
+        assert_equal [lindex $observe2 0] "observe"
 
         # Test RESET (whitelisted)
         $rd RESET
@@ -458,13 +458,13 @@ start_server {tags {"observe"}} {
         $rd read
 
         # Subscribe to multiple observe queries
-        $rd GET.OBSERVE mfp_k1
+        $rd OBSERVE GET mfp_k1
         set fp1 [lindex [$rd read] 2]
 
-        $rd GET.OBSERVE mfp_k2
+        $rd OBSERVE GET mfp_k2
         set fp2 [lindex [$rd read] 2]
 
-        $rd GET.OBSERVE mfp_k3
+        $rd OBSERVE GET mfp_k3
         set fp3 [lindex [$rd read] 2]
 
         # Unobserve two fingerprints at once
@@ -514,7 +514,7 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE to_k
+        $rd OBSERVE GET to_k
         set obs_timeout [$rd read]
 
         # Restore timeout so r is not disconnected during the sleep.
@@ -543,7 +543,7 @@ start_server {tags {"observe"}} {
         $rd SET ev_k "initial"
         $rd read
 
-        $rd GET.OBSERVE ev_k
+        $rd OBSERVE GET ev_k
         set initial [$rd read]
 
         assert_equal [lindex $initial 4] "initial"
@@ -567,7 +567,7 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE elev_k
+        $rd OBSERVE GET elev_k
         set obs_elev [$rd read]
 
         # Should not create additional connections
@@ -582,17 +582,17 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - Non-existent key returns nil result" {
+    test "OBSERVE GET - Non-existent key returns nil result" {
         r SELECT 0
         r DEL nil_k
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE nil_k
+        $rd OBSERVE GET nil_k
         set observe [$rd read]
 
-        assert_equal [lindex $observe 0] ".observe"
+        assert_equal [lindex $observe 0] "observe"
         assert_equal [lindex $observe 1] "fingerprint"
         assert_equal [lindex $observe 3] "result"
         # Result for non-existent key must be nil/empty
@@ -603,14 +603,14 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - No notification when observed key is deleted" {
+    test "OBSERVE GET - No notification when observed key is deleted" {
         r SELECT 0
         r SET delno_k "value"
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE delno_k
+        $rd OBSERVE GET delno_k
         set observe [$rd read]
         set fingerprint [lindex $observe 2]
 
@@ -624,14 +624,14 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - Fingerprint is a 16-character lowercase hex string" {
+    test "OBSERVE GET - Fingerprint is a 16-character lowercase hex string" {
         r SELECT 0
         r SET fphex_k "value"
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE fphex_k
+        $rd OBSERVE GET fphex_k
         set observe [$rd read]
         set fingerprint [lindex $observe 2]
 
@@ -643,7 +643,7 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - Re-subscribing same fingerprint is idempotent" {
+    test "OBSERVE GET - Re-subscribing same fingerprint is idempotent" {
         r SELECT 0
         r SET rsub_k "value"
 
@@ -652,11 +652,11 @@ start_server {tags {"observe"}} {
         $rd read
 
         # Subscribe twice to the same key
-        $rd GET.OBSERVE rsub_k
+        $rd OBSERVE GET rsub_k
         set obs1 [$rd read]
         set fp1 [lindex $obs1 2]
 
-        $rd GET.OBSERVE rsub_k
+        $rd OBSERVE GET rsub_k
         set obs2 [$rd read]
         set fp2 [lindex $obs2 2]
 
@@ -676,14 +676,14 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - INCR and INCRBY trigger observer" {
+    test "OBSERVE GET - INCR and INCRBY trigger observer" {
         r SELECT 0
         r SET incr_k 10
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE incr_k
+        $rd OBSERVE GET incr_k
         set observe [$rd read]
         assert_equal [lindex $observe 4] "10"
 
@@ -700,14 +700,14 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - RENAME: old-key observer sees no updates after rename" {
+    test "OBSERVE GET - RENAME: old-key observer sees no updates after rename" {
         r SELECT 0
         r SET ren_old_k "value"
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE ren_old_k
+        $rd OBSERVE GET ren_old_k
         set observe [$rd read]
         set fingerprint [lindex $observe 2]
 
@@ -748,7 +748,7 @@ start_server {tags {"observe"}} {
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd GET.OBSERVE occ_k
+        $rd OBSERVE GET occ_k
         set obs [$rd read]
 
         set info_after [r INFO clients]
@@ -778,7 +778,7 @@ start_server {tags {"observe"}} {
         $rd read
 
         # Enter observing mode
-        $rd GET.OBSERVE r3_k1
+        $rd OBSERVE GET r3_k1
         $rd read
 
         # In RESP3, regular write commands must not be blocked
@@ -793,7 +793,7 @@ start_server {tags {"observe"}} {
         r DEL r3_k2
     }
 
-    test "GET.OBSERVE - Independent observers for different keys do not cross-notify" {
+    test "OBSERVE GET - Independent observers for different keys do not cross-notify" {
         r SELECT 0
         r SET ind_k1 "value1"
         r SET ind_k2 "value2"
@@ -806,10 +806,10 @@ start_server {tags {"observe"}} {
         $rd2 SELECT 0
         $rd2 read
 
-        $rd1 GET.OBSERVE ind_k1
+        $rd1 OBSERVE GET ind_k1
         set obs1 [$rd1 read]
 
-        $rd2 GET.OBSERVE ind_k2
+        $rd2 OBSERVE GET ind_k2
         set obs2 [$rd2 read]
 
         # Modify only ind_k1
@@ -831,14 +831,14 @@ start_server {tags {"observe"}} {
         $rd2 close
     }
 
-    test "ZRANGE.OBSERVE - No notification when key is deleted" {
+    test "OBSERVE ZRANGE - No notification when key is deleted" {
         r SELECT 0
         r ZADD zdno_zset 1 "one" 2 "two"
 
         set rd [valkey_deferring_client]
         $rd SELECT 0
         $rd read
-        $rd ZRANGE.OBSERVE zdno_zset 0 -1
+        $rd OBSERVE ZRANGE zdno_zset 0 -1
         set observe [$rd read]
 
         r DEL zdno_zset
@@ -849,7 +849,7 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
-    test "GET.OBSERVE - Multiple writes emit one notification each" {
+    test "OBSERVE GET - Multiple writes emit one notification each" {
         r SELECT 0
         r SET mw_k "v1"
 
@@ -860,7 +860,7 @@ start_server {tags {"observe"}} {
         set prev_debounce [r CONFIG GET observe-debounce-period-ms]
         r CONFIG SET observe-debounce-period-ms 0
 
-        $rd GET.OBSERVE mw_k
+        $rd OBSERVE GET mw_k
         $rd read
 
         r SET mw_k "v2"

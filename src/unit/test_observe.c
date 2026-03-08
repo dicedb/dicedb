@@ -235,7 +235,7 @@ int test_observeSubscribeFingerprint(int argc, char **argv, int flags) {
     
     client *c = createMockClient();
     c->argc = 2;
-    c->argv[0] = createStringObject("GET.OBSERVE", 9);
+    c->argv[0] = createStringObject("OBSERVE", 7);
     c->argv[1] = createStringObject("key1", 4);
     
     sds fingerprint = generateCommandFingerprint(c);
@@ -261,7 +261,7 @@ int test_observeUnsubscribeFingerprint(int argc, char **argv, int flags) {
     
     client *c = createMockClient();
     c->argc = 2;
-    c->argv[0] = createStringObject("GET.OBSERVE", 9);
+    c->argv[0] = createStringObject("OBSERVE", 7);
     c->argv[1] = createStringObject("key1", 4);
     
     /* Test that unsubscribe doesn't crash with NULL structures */
@@ -284,10 +284,10 @@ int test_freeObserveCommandInfo(int argc, char **argv, int flags) {
     
     /* Create a observeCommandInfo structure */
     observeCommandInfo *info = zmalloc(sizeof(observeCommandInfo));
-    info->command = sdsnew("GET.OBSERVE");
+    info->command = sdsnew("GET");
     info->argc = 2;
     info->argv = zmalloc(sizeof(void*) * 2);
-    info->argv[0] = createStringObject("GET.OBSERVE", 9);
+    info->argv[0] = createStringObject("GET", 3);
     info->argv[1] = createStringObject("key1", 4);
     info->key = createStringObject("key1", 4);
     info->clients = listCreate();

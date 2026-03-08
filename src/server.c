@@ -705,14 +705,10 @@ int isInsideYieldingLongCommand(void) {
     return scriptIsTimedout() || server.busy_module_yield_flags;
 }
 
-/* Check if a command is an OBSERVE variant (ends with .OBSERVE) */
+/* Check if a command is the OBSERVE command */
 int isObserveCommand(struct serverCommand *cmd) {
     if (!cmd || !cmd->fullname) return 0;
-    size_t len = strlen(cmd->fullname);
-    const char *suffix = ".observe";
-    size_t suffix_len = 8;
-    if (len < suffix_len) return 0;
-    return strcasecmp(cmd->fullname + len - suffix_len, suffix) == 0;
+    return strcasecmp(cmd->fullname, "observe") == 0;
 }
 
 /* Return true if this instance has persistence completely turned off:
@@ -4130,7 +4126,7 @@ int processCommand(client *c) {
         c->cmd->proc != unobserveCommand &&
         !isObserveCommand(c->cmd)) {
         rejectCommandFormat(c,
-                            "Can't execute '%s': only *.OBSERVE / "
+                            "Can't execute '%s': only OBSERVE / "
                             "UNOBSERVE / PING / QUIT / RESET are allowed in this context",
                             c->cmd->fullname);
         return C_OK;

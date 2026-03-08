@@ -3442,7 +3442,7 @@ dict *getClientPubSubShardChannels(client *c);
 
 /* Observe */
 typedef struct observeCommandInfo {
-    sds command;          /* Command name (e.g., "GET.OBSERVE", "ZRANGE.OBSERVE") */
+    sds command;          /* Command name of the observed command (e.g., "GET", "ZRANGE") */
     int argc;             /* Number of arguments */
     robj **argv;          /* Command arguments */
     robj *key;            /* The key being followed */
@@ -3459,10 +3459,6 @@ typedef void (*observeCommandHandler)(client *c);
 void genericObserveCommand(client *c, observeCommandHandler handler);
 void genericExecuteObserveNotification(client *c, observeCommandHandler handler, sds fingerprint);
 void executeObserveCommand(observeCommandInfo *observeInfo, robj *fingerprint_obj, int dbid);
-
-/* Observe command handlers - defined in their respective modules */
-void getObserveHandler(client *c);
-void zrangeObserveHandler(client *c);
 
 /* Observe */
 sds generateCommandFingerprint(client *c);
@@ -4051,8 +4047,7 @@ void resetCommand(client *c);
 void failoverCommand(client *c);
 
 /* Observe Commands */
-void getObserveCommand(client *c);
-void zrangeObserveCommand(client *c);
+void observeCommand(client *c);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__((deprecated));

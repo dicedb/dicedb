@@ -1862,11 +1862,10 @@ int isPubsubPush(redisReply *r) {
     }
     char *str = r->element[0]->str;
     size_t len = r->element[0]->len;
-    /* Check if it is [p|s][un]subscribe or [p|s]message, but even simpler, we
-     * just check that it ends with "message" or "subscribe", or if it's ".observe". */
+    /* Check if it is [p|s][un]subscribe or [p|s]message, or the observe push marker. */
     return ((len >= strlen("message") && !strcmp(str + len - strlen("message"), "message")) ||
             (len >= strlen("subscribe") && !strcmp(str + len - strlen("subscribe"), "subscribe")) ||
-            (len >= strlen(".observe") && !strcmp(str + len - strlen(".observe"), ".observe")));
+            !strcmp(str, "observe"));
 }
 
 int isColorTerm(void) {
@@ -2326,7 +2325,7 @@ static int cliSendCommand(int argc, char **argv, long repeat) {
     if (!strcasecmp(command, "monitor")) config.monitor_mode = 1;
     int is_subscribe =
         (!strcasecmp(command, "subscribe") || !strcasecmp(command, "psubscribe") || !strcasecmp(command, "ssubscribe") ||
-         (strlen(command) > 8 && !strcasecmp(command + strlen(command) - 8, ".observe")));
+         !strcasecmp(command, "observe"));
     int is_unsubscribe = (!strcasecmp(command, "unsubscribe") || !strcasecmp(command, "punsubscribe") ||
                           !strcasecmp(command, "sunsubscribe") || !strcasecmp(command, "unobserve"));
     if (!strcasecmp(command, "sync") || !strcasecmp(command, "psync")) config.replica_mode = 1;
@@ -2375,9 +2374,9 @@ static int cliSendCommand(int argc, char **argv, long repeat) {
         if (is_subscribe || is_unsubscribe) {
             /*
              * Observe commands always expect exactly 1 confirmation
-             * This check covers all .observe and unobserve commands.
+             * This check covers OBSERVE and UNOBSERVE commands.
             */
-            if (strlen(command) > 7 && !strcasecmp(command + strlen(command) - 7, "observe")) {
+            if (!strcasecmp(command, "observe") || !strcasecmp(command, "unobserve")) {
                 num_expected_pubsub_push = 1;
             } else {
                 /* When a push callback is set, redisGetReply (hiredis) loops until
@@ -2407,12 +2406,10 @@ static int cliSendCommand(int argc, char **argv, long repeat) {
             fflush(stdout);
             if (config.pubsub_mode || num_expected_pubsub_push > 0) {
                 if (isPubsubPush(config.last_reply)) {
-                    /* Special case for observe commands: accept ".observe" as confirmation */
-                    int is_observe_confirmation = (config.last_reply->element[0]->len >= strlen(".observe") && 
-                                               !strcasecmp(config.last_reply->element[0]->str, ".observe"));
-                    
-                    
-                    if (num_expected_pubsub_push > 0 && 
+                    /* Special case for observe commands: accept "observe" as confirmation */
+                    int is_observe_confirmation = !strcasecmp(config.last_reply->element[0]->str, "observe");
+
+                    if (num_expected_pubsub_push > 0 &&
                         (!strcasecmp(config.last_reply->element[0]->str, command) || is_observe_confirmation)) {
                         /* This pushed message confirms the
                          * [p|s][un]subscribe command. */
