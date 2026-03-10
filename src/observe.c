@@ -87,8 +87,80 @@ void genericExecuteObserveNotification(client *c, observeCommandHandler handler,
 
 /* Map a command name to its observe handler */
 static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
-    if (!strcasecmp(cmd_name, "GET")) return getCommand;
-    if (!strcasecmp(cmd_name, "ZRANGE")) return zrangeCommand;
+    /* String commands */
+    if (!strcasecmp(cmd_name, "GET"))      return getCommand;
+    if (!strcasecmp(cmd_name, "STRLEN"))   return strlenCommand;
+    if (!strcasecmp(cmd_name, "GETRANGE")) return getrangeCommand;
+
+    /* Hash commands */
+    if (!strcasecmp(cmd_name, "HGET"))    return hgetCommand;
+    if (!strcasecmp(cmd_name, "HMGET"))   return hmgetCommand;
+    if (!strcasecmp(cmd_name, "HLEN"))    return hlenCommand;
+    if (!strcasecmp(cmd_name, "HGETALL")) return hgetallCommand;
+    if (!strcasecmp(cmd_name, "HKEYS"))   return hkeysCommand;
+    if (!strcasecmp(cmd_name, "HVALS"))   return hvalsCommand;
+    if (!strcasecmp(cmd_name, "HEXISTS")) return hexistsCommand;
+    if (!strcasecmp(cmd_name, "HSTRLEN")) return hstrlenCommand;
+
+    /* List commands */
+    if (!strcasecmp(cmd_name, "LLEN"))   return llenCommand;
+    if (!strcasecmp(cmd_name, "LRANGE")) return lrangeCommand;
+    if (!strcasecmp(cmd_name, "LINDEX")) return lindexCommand;
+    if (!strcasecmp(cmd_name, "LPOS"))   return lposCommand;
+
+    /* Set commands */
+    if (!strcasecmp(cmd_name, "SCARD"))      return scardCommand;
+    if (!strcasecmp(cmd_name, "SISMEMBER"))  return sismemberCommand;
+    if (!strcasecmp(cmd_name, "SMISMEMBER")) return smismemberCommand;
+    if (!strcasecmp(cmd_name, "SMEMBERS"))   return sinterCommand;
+
+    /* Sorted set commands */
+    if (!strcasecmp(cmd_name, "ZRANGE"))        return zrangeCommand;
+    if (!strcasecmp(cmd_name, "ZSCORE"))        return zscoreCommand;
+    if (!strcasecmp(cmd_name, "ZCARD"))         return zcardCommand;
+    if (!strcasecmp(cmd_name, "ZRANK"))         return zrankCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANK"))      return zrevrankCommand;
+    if (!strcasecmp(cmd_name, "ZCOUNT"))        return zcountCommand;
+    if (!strcasecmp(cmd_name, "ZLEXCOUNT"))     return zlexcountCommand;
+    if (!strcasecmp(cmd_name, "ZRANGEBYSCORE"))  return zrangebyscoreCommand;
+    if (!strcasecmp(cmd_name, "ZRANGEBYLEX"))    return zrangebylexCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANGE"))      return zrevrangeCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANGEBYSCORE")) return zrevrangebyscoreCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANGEBYLEX")) return zrevrangebylexCommand;
+    if (!strcasecmp(cmd_name, "ZMSCORE"))        return zmscoreCommand;
+
+    /* Bitmap commands */
+    if (!strcasecmp(cmd_name, "GETBIT"))      return getbitCommand;
+    if (!strcasecmp(cmd_name, "BITCOUNT"))    return bitcountCommand;
+    if (!strcasecmp(cmd_name, "BITPOS"))      return bitposCommand;
+    if (!strcasecmp(cmd_name, "BITFIELD_RO")) return bitfieldroCommand;
+
+    /* HyperLogLog commands */
+    if (!strcasecmp(cmd_name, "PFCOUNT")) return pfcountCommand;
+
+    /* Stream commands */
+    if (!strcasecmp(cmd_name, "XLEN"))      return xlenCommand;
+    if (!strcasecmp(cmd_name, "XRANGE"))    return xrangeCommand;
+    if (!strcasecmp(cmd_name, "XREVRANGE")) return xrevrangeCommand;
+    if (!strcasecmp(cmd_name, "XPENDING"))  return xpendingCommand;
+
+    /* Geo commands */
+    if (!strcasecmp(cmd_name, "GEOPOS"))    return geoposCommand;
+    if (!strcasecmp(cmd_name, "GEODIST"))   return geodistCommand;
+    if (!strcasecmp(cmd_name, "GEOSEARCH")) return geosearchCommand;
+    if (!strcasecmp(cmd_name, "GEOHASH"))   return geohashCommand;
+
+    /* Generic commands */
+    if (!strcasecmp(cmd_name, "SORT_RO")) return sortroCommand;
+
+    /* Key metadata commands */
+    if (!strcasecmp(cmd_name, "TTL"))         return ttlCommand;
+    if (!strcasecmp(cmd_name, "PTTL"))        return pttlCommand;
+    if (!strcasecmp(cmd_name, "EXPIRETIME"))  return expiretimeCommand;
+    if (!strcasecmp(cmd_name, "PEXPIRETIME")) return pexpiretimeCommand;
+    if (!strcasecmp(cmd_name, "EXISTS"))      return existsCommand;
+    if (!strcasecmp(cmd_name, "TYPE"))        return typeCommand;
+
     return NULL;
 }
 

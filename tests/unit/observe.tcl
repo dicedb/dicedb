@@ -849,6 +849,293 @@ start_server {tags {"observe"}} {
         $rd close
     }
 
+    test "OBSERVE STRLEN - Basic functionality" {
+        r SELECT 0
+        r SET strlen_k "hello"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE STRLEN strlen_k
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] 5
+
+        r SET strlen_k "hello world"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] 11
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE HGET - Basic functionality" {
+        r SELECT 0
+        r HSET hget_h field1 "initial"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE HGET hget_h field1
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] "initial"
+
+        r HSET hget_h field1 "updated"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] "updated"
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE HGETALL - Reflects all hash field changes" {
+        r SELECT 0
+        r DEL hga_h
+        r HSET hga_h f1 "v1" f2 "v2"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE HGETALL hga_h
+        set observe [$rd read]
+
+        set fingerprint [lindex $observe 2]
+        set initial [lindex $observe 4]
+        assert_equal $initial {f1 v1 f2 v2}
+
+        r HSET hga_h f3 "v3"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] {f1 v1 f2 v2 f3 v3}
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE LLEN - Basic functionality" {
+        r SELECT 0
+        r DEL llen_l
+        r RPUSH llen_l "a" "b" "c"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE LLEN llen_l
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] 3
+
+        r RPUSH llen_l "d"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] 4
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE SCARD - Basic functionality" {
+        r SELECT 0
+        r DEL scard_s
+        r SADD scard_s "a" "b" "c"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE SCARD scard_s
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] 3
+
+        r SADD scard_s "d"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] 4
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE ZSCORE - Basic functionality" {
+        r SELECT 0
+        r DEL zscore_z
+        r ZADD zscore_z 1.5 "member"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE ZSCORE zscore_z member
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] 1.5
+
+        r ZADD zscore_z 9.0 "member"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] 9
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE BITCOUNT - Basic functionality" {
+        r SELECT 0
+        r SET bc_k "\xff"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE BITCOUNT bc_k
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] 8
+
+        r SET bc_k "\x0f"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] 4
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE PFCOUNT - Basic functionality" {
+        r SELECT 0
+        r DEL pf_k
+        r PFADD pf_k "a" "b" "c"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE PFCOUNT pf_k
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert {[lindex $observe 4] >= 3}
+
+        r PFADD pf_k "d" "e" "f" "g" "h"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert {[lindex $notif 4] > [lindex $observe 4]}
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE XLEN - Basic functionality" {
+        r SELECT 0
+        r DEL xlen_s
+        r XADD xlen_s "*" field1 value1
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE XLEN xlen_s
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] 1
+
+        r XADD xlen_s "*" field2 value2
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] 2
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE GEODIST - Basic functionality" {
+        r SELECT 0
+        r DEL geo_k
+        r GEOADD geo_k 13.361389 38.115556 "Palermo"
+        r GEOADD geo_k 15.087269 37.502669 "Catania"
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE GEODIST geo_k Palermo Catania
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        set initial_dist [lindex $observe 4]
+        assert {$initial_dist > 0}
+
+        r GEOADD geo_k 2.349014 48.864716 "Paris"
+        r GEOADD geo_k 15.500000 37.000000 "Catania"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert {[lindex $notif 4] != $initial_dist}
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
+    test "OBSERVE TTL - Reflects expiry changes" {
+        r SELECT 0
+        r SET ttl_k "value" EX 100
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE TTL ttl_k
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        set fingerprint [lindex $observe 2]
+        set initial_ttl [lindex $observe 4]
+        assert {$initial_ttl > 0 && $initial_ttl <= 100}
+
+        r EXPIRE ttl_k 500
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        set new_ttl [lindex $notif 4]
+        assert {$new_ttl > 100 && $new_ttl <= 500}
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+    }
+
     test "OBSERVE GET - Multiple writes emit one notification each" {
         r SELECT 0
         r SET mw_k "v1"
