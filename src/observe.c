@@ -85,6 +85,40 @@ void genericExecuteObserveNotification(client *c, observeCommandHandler handler,
     if (!old_flags.pushing) c->flag.pushing = 0;
 }
 
+/* Dict type for the observe command registry: SDS keys (case-insensitive), handler pointer values. */
+dictType observeRegistryDictType = {
+    dictSdsCaseHash,            /* hash function */
+    dictSdsDup,                 /* key dup */
+    dictSdsKeyCaseCompare,      /* key compare */
+    dictSdsDestructor,          /* key destructor */
+    NULL,                       /* val destructor - function pointers need no freeing */
+};
+
+/* Register a custom read-only command handler so it can be used with OBSERVE.
+ * cmd_name is case-insensitive. Returns 1 if newly registered, 0 if updated. */
+int observeRegisterCommand(const char *cmd_name, observeCommandHandler handler) {
+    if (server.observe_command_registry == NULL)
+        server.observe_command_registry = dictCreate(&observeRegistryDictType);
+
+    sds key = sdsnew(cmd_name);
+    dictEntry *de = dictFind(server.observe_command_registry, key);
+    if (de) {
+        dictSetVal(server.observe_command_registry, de, (void *)(unsigned long)handler);
+        sdsfree(key);
+        return 0;
+    }
+    dictAdd(server.observe_command_registry, key, (void *)(unsigned long)handler);
+    return 1;
+}
+
+/* Unregister a previously registered command handler. */
+void observeUnregisterCommand(const char *cmd_name) {
+    if (server.observe_command_registry == NULL) return;
+    sds key = sdsnew(cmd_name);
+    dictDelete(server.observe_command_registry, key);
+    sdsfree(key);
+}
+
 /* Map a command name to its observe handler */
 static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
     /* String commands */
@@ -160,6 +194,12 @@ static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
     if (!strcasecmp(cmd_name, "PEXPIRETIME")) return pexpiretimeCommand;
     if (!strcasecmp(cmd_name, "EXISTS"))      return existsCommand;
     if (!strcasecmp(cmd_name, "TYPE"))        return typeCommand;
+
+    /* Fall back to dynamically registered handlers (e.g. from modules) */
+    if (server.observe_command_registry) {
+        dictEntry *de = dictFind(server.observe_command_registry, (void *)cmd_name);
+        if (de) return (observeCommandHandler)(unsigned long)dictGetVal(de);
+    }
 
     return NULL;
 }

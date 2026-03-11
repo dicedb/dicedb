@@ -1020,6 +1020,15 @@ void debugCommand(client *c) {
     } else if (!strcasecmp(c->argv[1]->ptr, "client-enforce-reply-list") && c->argc == 3) {
         server.debug_client_enforce_reply_list = atoi(c->argv[2]->ptr);
         addReply(c, shared.ok);
+    } else if (!strcasecmp(c->argv[1]->ptr, "observe-register") && c->argc == 3) {
+        /* DEBUG OBSERVE-REGISTER <cmd> — register getCommand as a fake handler
+         * for <cmd> so integration tests can exercise the module registry path. */
+        int isnew = observeRegisterCommand(c->argv[2]->ptr, getCommand);
+        addReplyLongLong(c, isnew);
+    } else if (!strcasecmp(c->argv[1]->ptr, "observe-unregister") && c->argc == 3) {
+        /* DEBUG OBSERVE-UNREGISTER <cmd> — remove a previously registered handler. */
+        observeUnregisterCommand(c->argv[2]->ptr);
+        addReply(c, shared.ok);
     } else if (!handleDebugClusterCommand(c)) {
         addReplySubcommandSyntaxError(c);
         return;

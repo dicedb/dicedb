@@ -27,18 +27,19 @@ The fingerprint is a CRC64 hash of the command name + arguments (e.g., `GET key1
 3. If `observe_debounce_period > 0`, changes are buffered and flushed by a timer; otherwise fired immediately
 4. `executeObserveCommand()` finds all fingerprints watching the key and pushes updates to subscribed clients
 
-## Adding OBSERVE Support for a New Command
+## Adding OBSERVE Support for a New Built-in Command
 
 ### Step 1 — Register the handler in observe.c
 
-File: `src/observe.c`, function `findHandlerForCommand()` (near the top of the file):
+File: `src/observe.c`, function `findHandlerForCommand()`:
 
 ```c
 static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
     if (!strcasecmp(cmd_name, "GET"))    return getCommand;
     if (!strcasecmp(cmd_name, "ZRANGE")) return zrangeCommand;
     if (!strcasecmp(cmd_name, "HGET"))   return hgetCommand;  /* ADD HERE */
-    return NULL;
+    /* ... */
+    return NULL; /* falls through to module registry */
 }
 ```
 
@@ -48,11 +49,96 @@ Rule: The handler must be the existing read-only command's proc function. It rec
 
 Because `OBSERVE` is a single generic command, no new command functions, `server.h` declarations, or `commands.def` entries are required for new supported commands.
 
+## Adding OBSERVE Support for Module Commands
+
+Modules can register their own read-only command handlers so that clients can `OBSERVE` them. The registration API in `src/observe.c` handles this without touching the built-in if/else chain.
+
+### How it works
+
+`findHandlerForCommand()` exhausts the built-in if/else table first. If nothing matches, it falls through to `server.observe_command_registry` — a case-insensitive dict populated via the registration API.
+
+### Step 1 — Register on module load
+
+Call `observeRegisterCommand()` inside your module's `OnLoad` function:
+
+```c
+#include "server.h"
+
+/* Your read-only command handler — same signature as any built-in command. */
+void myModuleGetCommand(client *c) {
+    /* c->argv[0] = command name, c->argv[1] = key, c->argv[2..] = extra args */
+    robj *val = lookupKeyRead(c->db, c->argv[1]);
+    if (val == NULL) {
+        addReplyNull(c);
+    } else {
+        addReplyBulk(c, val);
+    }
+}
+
+int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) {
+    if (RedisModule_Init(ctx, "mymodule", 1, REDISMODULE_APIVER_1) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    /* Register the command with Redis as usual */
+    if (RedisModule_CreateCommand(ctx, "MYMOD.GET", ...) == REDISMODULE_ERR)
+        return REDISMODULE_ERR;
+
+    /* Register the internal handler with OBSERVE so clients can subscribe */
+    observeRegisterCommand("MYMOD.GET", myModuleGetCommand);
+
+    return REDISMODULE_OK;
+}
+```
+
+After this, clients can run:
+
+```
+OBSERVE MYMOD.GET mykey
+```
+
+and receive push notifications whenever `mykey` changes.
+
+### Step 2 — Unregister on module unload
+
+Call `observeUnregisterCommand()` in your `OnUnload` to prevent dangling handler pointers:
+
+```c
+int RedisModule_OnUnload(RedisModuleCtx *ctx) {
+    observeUnregisterCommand("MYMOD.GET");
+    return REDISMODULE_OK;
+}
+```
+
+### Handler contract
+
+The handler registered via `observeRegisterCommand()` must follow the same rules as any built-in OBSERVE handler:
+
+| Rule | Details |
+|------|---------|
+| Read-only | Must not modify any key or global state |
+| Signature | `void (*)(client *c)` — identical to a built-in command proc |
+| argv layout | `argv[0]` = command name, `argv[1]` = key, `argv[2..]` = additional args |
+| Reply | Use `addReply*` as normal; the framework wraps the reply in the 5-element observe envelope |
+| Key notifications | Key changes are detected automatically via `signalModifiedKey`; no extra wiring needed in the module |
+
+### Registration API reference
+
+```c
+/* Register (or update) a handler. Returns 1 if new, 0 if updated. */
+int observeRegisterCommand(const char *cmd_name, observeCommandHandler handler);
+
+/* Remove a previously registered handler. No-op if not registered. */
+void observeUnregisterCommand(const char *cmd_name);
+```
+
+Both functions are declared in `src/server.h` and defined in `src/observe.c`.
+
 ## Key Files Reference
 
 | File | What to change |
 |------|----------------|
-| `src/observe.c` | Add `else if` branch in `findHandlerForCommand()` |
+| `src/observe.c` | Add branch in `findHandlerForCommand()` for built-in commands; `observeRegisterCommand` / `observeUnregisterCommand` for modules |
+| `src/server.h` | `observeRegisterCommand`, `observeUnregisterCommand`, `observeRegistryDictType` declared here |
 
 ## Existing Examples
 
