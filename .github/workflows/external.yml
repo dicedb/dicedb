@@ -34,7 +34,7 @@ jobs:
             --tags -slow
       - name: Archive server log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-external-standalone-log
           path: external-server.log
@@ -62,7 +62,7 @@ jobs:
             --tags -slow
       - name: Archive server log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-external-cluster-log
           path: external-server.log
@@ -86,7 +86,7 @@ jobs:
             --tags "-slow -needs:debug"
       - name: Archive server log
         if: ${{ failure() }}
-        uses: actions/upload-artifact@6f51ac03b9356f520e9adb1b1b7802705f340c2b # v4.5.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: test-external-nodebug-log
           path: external-server.log
