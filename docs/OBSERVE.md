@@ -84,7 +84,7 @@ int RedisModule_OnLoad(RedisModuleCtx *ctx, RedisModuleString **argv, int argc) 
         return REDISMODULE_ERR;
 
     /* Register the internal handler with OBSERVE so clients can subscribe */
-    observeRegisterCommand("MYMOD.GET", myModuleGetCommand);
+    ValkeyModule_ObserveRegisterCommandHandler("MYMOD.GET", myModuleGetCommand);
 
     return REDISMODULE_OK;
 }
@@ -100,23 +100,23 @@ and receive push notifications whenever `mykey` changes.
 
 ### Step 2 — Unregister on module unload
 
-Call `observeUnregisterCommand()` in your `OnUnload` to prevent dangling handler pointers:
+Call `ValkeyModule_ObserveUnregisterCommandHandler()` in your `OnUnload` to prevent dangling handler pointers:
 
 ```c
 int RedisModule_OnUnload(RedisModuleCtx *ctx) {
-    observeUnregisterCommand("MYMOD.GET");
+    ValkeyModule_ObserveUnregisterCommandHandler("MYMOD.GET");
     return REDISMODULE_OK;
 }
 ```
 
 ### Handler contract
 
-The handler registered via `observeRegisterCommand()` must follow the same rules as any built-in OBSERVE handler:
+The handler registered via `ValkeyModule_ObserveRegisterCommandHandler()` must follow the same rules as any built-in OBSERVE handler:
 
 | Rule | Details |
 |------|---------|
 | Read-only | Must not modify any key or global state |
-| Signature | `void (*)(client *c)` — identical to a built-in command proc |
+| Signature | `ValkeyModuleObserveCmdProc` — `void (*)(struct client *c)`, identical to a built-in command proc |
 | argv layout | `argv[0]` = command name, `argv[1]` = key, `argv[2..]` = additional args |
 | Reply | Use `addReply*` as normal; the framework wraps the reply in the 5-element observe envelope |
 | Key notifications | Key changes are detected automatically via `signalModifiedKey`; no extra wiring needed in the module |
@@ -125,20 +125,22 @@ The handler registered via `observeRegisterCommand()` must follow the same rules
 
 ```c
 /* Register (or update) a handler. Returns 1 if new, 0 if updated. */
-int observeRegisterCommand(const char *cmd_name, observeCommandHandler handler);
+int ValkeyModule_ObserveRegisterCommandHandler(const char *cmd_name, ValkeyModuleObserveCmdProc handler);
 
 /* Remove a previously registered handler. No-op if not registered. */
-void observeUnregisterCommand(const char *cmd_name);
+void ValkeyModule_ObserveUnregisterCommandHandler(const char *cmd_name);
 ```
 
-Both functions are declared in `src/server.h` and defined in `src/observe.c`.
+Both functions are declared in `src/valkeymodule.h` and wired through `src/module.c` to `src/observe.c`.
 
 ## Key Files Reference
 
 | File | What to change |
 |------|----------------|
-| `src/observe.c` | Add branch in `findHandlerForCommand()` for built-in commands; `observeRegisterCommand` / `observeUnregisterCommand` for modules |
-| `src/server.h` | `observeRegisterCommand`, `observeUnregisterCommand`, `observeRegistryDictType` declared here |
+| `src/observe.c` | Add branch in `findHandlerForCommand()` for built-in commands; `observeRegisterCommand` / `observeUnregisterCommand` for internal use |
+| `src/server.h` | `observeRegisterCommand`, `observeUnregisterCommand`, `observeRegistryDictType` declared here (internal) |
+| `src/valkeymodule.h` | `ValkeyModule_ObserveRegisterCommandHandler`, `ValkeyModule_ObserveUnregisterCommandHandler` — module-facing API |
+| `src/module.c` | `VM_ObserveRegisterCommandHandler`, `VM_ObserveUnregisterCommandHandler` — bridge between module API and observe.c |
 
 ## Existing Examples
 

@@ -875,6 +875,10 @@ typedef void (*ValkeyModuleClusterMessageReceiver)(ValkeyModuleCtx *ctx,
                                                    uint32_t len);
 typedef void (*ValkeyModuleTimerProc)(ValkeyModuleCtx *ctx, void *data);
 typedef void (*ValkeyModuleCommandFilterFunc)(ValkeyModuleCommandFilterCtx *filter);
+/* Handler type for OBSERVE command handlers registered by modules.
+ * Modules must include server.h for the full client definition. */
+struct client;
+typedef void (*ValkeyModuleObserveCmdProc)(struct client *c);
 typedef void (*ValkeyModuleForkDoneHandler)(int exitcode, int bysignal, void *user_data);
 typedef void (*ValkeyModuleScanCB)(ValkeyModuleCtx *ctx,
                                    ValkeyModuleString *keyname,
@@ -1450,6 +1454,9 @@ VALKEYMODULE_API void (*ValkeyModule_ThreadSafeContextUnlock)(ValkeyModuleCtx *c
 VALKEYMODULE_API int (*ValkeyModule_SubscribeToKeyspaceEvents)(ValkeyModuleCtx *ctx,
                                                                int types,
                                                                ValkeyModuleNotificationFunc cb) VALKEYMODULE_ATTR;
+VALKEYMODULE_API int (*ValkeyModule_ObserveRegisterCommandHandler)(const char *cmd_name,
+                                                                   ValkeyModuleObserveCmdProc handler) VALKEYMODULE_ATTR;
+VALKEYMODULE_API void (*ValkeyModule_ObserveUnregisterCommandHandler)(const char *cmd_name) VALKEYMODULE_ATTR;
 VALKEYMODULE_API int (*ValkeyModule_AddPostNotificationJob)(ValkeyModuleCtx *ctx,
                                                             ValkeyModulePostNotificationJobFunc callback,
                                                             void *pd,
