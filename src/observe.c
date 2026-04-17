@@ -125,16 +125,22 @@ static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
     if (!strcasecmp(cmd_name, "GET"))      return getCommand;
     if (!strcasecmp(cmd_name, "STRLEN"))   return strlenCommand;
     if (!strcasecmp(cmd_name, "GETRANGE")) return getrangeCommand;
+    if (!strcasecmp(cmd_name, "SUBSTR"))   return getrangeCommand;
+    if (!strcasecmp(cmd_name, "MGET"))     return mgetCommand;
+    if (!strcasecmp(cmd_name, "LCS"))      return lcsCommand;
+    if (!strcasecmp(cmd_name, "DUMP"))     return dumpCommand;
 
     /* Hash commands */
-    if (!strcasecmp(cmd_name, "HGET"))    return hgetCommand;
-    if (!strcasecmp(cmd_name, "HMGET"))   return hmgetCommand;
-    if (!strcasecmp(cmd_name, "HLEN"))    return hlenCommand;
-    if (!strcasecmp(cmd_name, "HGETALL")) return hgetallCommand;
-    if (!strcasecmp(cmd_name, "HKEYS"))   return hkeysCommand;
-    if (!strcasecmp(cmd_name, "HVALS"))   return hvalsCommand;
-    if (!strcasecmp(cmd_name, "HEXISTS")) return hexistsCommand;
-    if (!strcasecmp(cmd_name, "HSTRLEN")) return hstrlenCommand;
+    if (!strcasecmp(cmd_name, "HGET"))       return hgetCommand;
+    if (!strcasecmp(cmd_name, "HMGET"))      return hmgetCommand;
+    if (!strcasecmp(cmd_name, "HLEN"))       return hlenCommand;
+    if (!strcasecmp(cmd_name, "HGETALL"))    return hgetallCommand;
+    if (!strcasecmp(cmd_name, "HKEYS"))      return hkeysCommand;
+    if (!strcasecmp(cmd_name, "HVALS"))      return hvalsCommand;
+    if (!strcasecmp(cmd_name, "HEXISTS"))    return hexistsCommand;
+    if (!strcasecmp(cmd_name, "HSTRLEN"))    return hstrlenCommand;
+    if (!strcasecmp(cmd_name, "HRANDFIELD")) return hrandfieldCommand;
+    if (!strcasecmp(cmd_name, "HSCAN"))      return hscanCommand;
 
     /* List commands */
     if (!strcasecmp(cmd_name, "LLEN"))   return llenCommand;
@@ -147,21 +153,33 @@ static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
     if (!strcasecmp(cmd_name, "SISMEMBER"))  return sismemberCommand;
     if (!strcasecmp(cmd_name, "SMISMEMBER")) return smismemberCommand;
     if (!strcasecmp(cmd_name, "SMEMBERS"))   return sinterCommand;
+    if (!strcasecmp(cmd_name, "SINTER"))     return sinterCommand;
+    if (!strcasecmp(cmd_name, "SINTERCARD")) return sinterCardCommand;
+    if (!strcasecmp(cmd_name, "SDIFF"))      return sdiffCommand;
+    if (!strcasecmp(cmd_name, "SUNION"))     return sunionCommand;
+    if (!strcasecmp(cmd_name, "SRANDMEMBER")) return srandmemberCommand;
+    if (!strcasecmp(cmd_name, "SSCAN"))      return sscanCommand;
 
     /* Sorted set commands */
-    if (!strcasecmp(cmd_name, "ZRANGE"))        return zrangeCommand;
-    if (!strcasecmp(cmd_name, "ZSCORE"))        return zscoreCommand;
-    if (!strcasecmp(cmd_name, "ZCARD"))         return zcardCommand;
-    if (!strcasecmp(cmd_name, "ZRANK"))         return zrankCommand;
-    if (!strcasecmp(cmd_name, "ZREVRANK"))      return zrevrankCommand;
-    if (!strcasecmp(cmd_name, "ZCOUNT"))        return zcountCommand;
-    if (!strcasecmp(cmd_name, "ZLEXCOUNT"))     return zlexcountCommand;
-    if (!strcasecmp(cmd_name, "ZRANGEBYSCORE"))  return zrangebyscoreCommand;
-    if (!strcasecmp(cmd_name, "ZRANGEBYLEX"))    return zrangebylexCommand;
-    if (!strcasecmp(cmd_name, "ZREVRANGE"))      return zrevrangeCommand;
+    if (!strcasecmp(cmd_name, "ZRANGE"))           return zrangeCommand;
+    if (!strcasecmp(cmd_name, "ZSCORE"))           return zscoreCommand;
+    if (!strcasecmp(cmd_name, "ZCARD"))            return zcardCommand;
+    if (!strcasecmp(cmd_name, "ZRANK"))            return zrankCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANK"))         return zrevrankCommand;
+    if (!strcasecmp(cmd_name, "ZCOUNT"))           return zcountCommand;
+    if (!strcasecmp(cmd_name, "ZLEXCOUNT"))        return zlexcountCommand;
+    if (!strcasecmp(cmd_name, "ZRANGEBYSCORE"))    return zrangebyscoreCommand;
+    if (!strcasecmp(cmd_name, "ZRANGEBYLEX"))      return zrangebylexCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANGE"))        return zrevrangeCommand;
     if (!strcasecmp(cmd_name, "ZREVRANGEBYSCORE")) return zrevrangebyscoreCommand;
-    if (!strcasecmp(cmd_name, "ZREVRANGEBYLEX")) return zrevrangebylexCommand;
-    if (!strcasecmp(cmd_name, "ZMSCORE"))        return zmscoreCommand;
+    if (!strcasecmp(cmd_name, "ZREVRANGEBYLEX"))   return zrevrangebylexCommand;
+    if (!strcasecmp(cmd_name, "ZMSCORE"))          return zmscoreCommand;
+    if (!strcasecmp(cmd_name, "ZRANDMEMBER"))      return zrandmemberCommand;
+    if (!strcasecmp(cmd_name, "ZDIFF"))            return zdiffCommand;
+    if (!strcasecmp(cmd_name, "ZINTER"))           return zinterCommand;
+    if (!strcasecmp(cmd_name, "ZINTERCARD"))       return zinterCardCommand;
+    if (!strcasecmp(cmd_name, "ZUNION"))           return zunionCommand;
+    if (!strcasecmp(cmd_name, "ZSCAN"))            return zscanCommand;
 
     /* Bitmap commands */
     if (!strcasecmp(cmd_name, "GETBIT"))      return getbitCommand;
@@ -177,6 +195,7 @@ static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
     if (!strcasecmp(cmd_name, "XRANGE"))    return xrangeCommand;
     if (!strcasecmp(cmd_name, "XREVRANGE")) return xrevrangeCommand;
     if (!strcasecmp(cmd_name, "XPENDING"))  return xpendingCommand;
+    if (!strcasecmp(cmd_name, "XREAD"))     return xreadCommand;
 
     /* Geo commands */
     if (!strcasecmp(cmd_name, "GEOPOS"))    return geoposCommand;
@@ -186,6 +205,7 @@ static observeCommandHandler findHandlerForCommand(const char *cmd_name) {
 
     /* Generic commands */
     if (!strcasecmp(cmd_name, "SORT_RO")) return sortroCommand;
+    if (!strcasecmp(cmd_name, "TOUCH"))   return touchCommand;
 
     /* Key metadata commands */
     if (!strcasecmp(cmd_name, "TTL"))         return ttlCommand;
