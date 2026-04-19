@@ -13540,6 +13540,14 @@ int VM_GetDbIdFromDefragCtx(ValkeyModuleDefragCtx *ctx) {
     return ctx->dbid;
 }
 
+int VM_ObserveRegisterCommandHandler(const char *cmd_name, ValkeyModuleObserveCmdProc handler) {
+    return observeRegisterCommand(cmd_name, (observeCommandHandler)handler);
+}
+
+void VM_ObserveUnregisterCommandHandler(const char *cmd_name) {
+    observeUnregisterCommand(cmd_name);
+}
+
 /* Register all the APIs we export. Keep this function at the end of the
  * file so that's easy to seek it to add new entries. */
 void moduleRegisterCoreAPI(void) {
@@ -13903,4 +13911,6 @@ void moduleRegisterCoreAPI(void) {
     REGISTER_API(RdbStreamFree);
     REGISTER_API(RdbLoad);
     REGISTER_API(RdbSave);
+    REGISTER_API(ObserveRegisterCommandHandler);
+    REGISTER_API(ObserveUnregisterCommandHandler);
 }

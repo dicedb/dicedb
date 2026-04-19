@@ -2167,6 +2167,7 @@ struct valkeyServer {
     dict *observe_fingerprints;           /* Map fingerprints to follow command info */
     dict *observe_key_to_fingerprints;    /* Map keys to list of fingerprints observing them */
     unsigned int observing_clients;       /* # of clients using .OBSERVE commands */
+    dict *observe_command_registry;       /* Dynamically registered command handlers (e.g. from modules) */
 
     dict *observe_debounce_buffer;        /* Buffer of keys that need observe notifications */
     unsigned int observe_debounce_period;     /* Debounce period in milliseconds */
@@ -3472,6 +3473,9 @@ void observeDebounceKeyChange(robj *key, int dbid);
 void initObserveDebounce(void);
 void freeObserveDebounceKey(observeDebounceKey *odk);
 void unobserveCommand(client *c);
+int observeRegisterCommand(const char *cmd_name, observeCommandHandler handler);
+void observeUnregisterCommand(const char *cmd_name);
+extern dictType observeRegistryDictType;
 
 /* Keyspace events notification */
 void notifyKeyspaceEvent(int type, char *event, robj *key, int dbid);

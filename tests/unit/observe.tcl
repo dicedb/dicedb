@@ -1165,4 +1165,115 @@ start_server {tags {"observe"}} {
         $rd read
         $rd close
     }
+
+    # ---------------------------------------------------------------------------
+    # Module registry tests
+    # These tests exercise the dynamic command registry added to support modules.
+    # The DEBUG OBSERVE-REGISTER / DEBUG OBSERVE-UNREGISTER subcommands are used
+    # as a test bridge since the C-level observeRegisterCommand() API is not
+    # directly reachable from Tcl.
+    # ---------------------------------------------------------------------------
+
+    test "OBSERVE module registry - unregistered command returns error" {
+        # Sanity: a command that is neither built-in nor in the registry must fail
+        r SELECT 0
+        r SET reg_k "value"
+        assert_error "*OBSERVE not supported*" {r OBSERVE NOTACOMMAND reg_k}
+    }
+
+    test "OBSERVE module registry - register makes command observable" {
+        r SELECT 0
+        r SET reg_k "hello"
+
+        # Register a fake handler (backed by getCommand) for FAKE.GET
+        set isnew [r DEBUG observe-register FAKE.GET]
+        assert_equal $isnew 1
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE FAKE.GET reg_k
+        set observe [$rd read]
+
+        assert_equal [lindex $observe 0] "observe"
+        assert_equal [lindex $observe 1] "fingerprint"
+        assert_equal [lindex $observe 3] "result"
+        assert_equal [lindex $observe 4] "hello"
+
+        $rd UNOBSERVE [lindex $observe 2]
+        $rd read
+        $rd close
+        r DEBUG observe-unregister FAKE.GET
+    }
+
+    test "OBSERVE module registry - registered command receives key-change notifications" {
+        r SELECT 0
+        r SET reg_notif_k "initial"
+
+        r DEBUG observe-register FAKE.GET
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+        $rd OBSERVE FAKE.GET reg_notif_k
+        set observe [$rd read]
+        set fingerprint [lindex $observe 2]
+        assert_equal [lindex $observe 4] "initial"
+
+        r SET reg_notif_k "updated"
+
+        set notif [$rd read]
+        assert_equal [lindex $notif 2] $fingerprint
+        assert_equal [lindex $notif 4] "updated"
+
+        $rd UNOBSERVE $fingerprint
+        $rd read
+        $rd close
+        r DEBUG observe-unregister FAKE.GET
+    }
+
+    test "OBSERVE module registry - lookup is case-insensitive" {
+        r SELECT 0
+        r SET reg_case_k "value"
+
+        # Register with mixed case
+        r DEBUG observe-register fake.get
+
+        set rd [valkey_deferring_client]
+        $rd SELECT 0
+        $rd read
+
+        # Subscribe using different casing — should still resolve
+        $rd OBSERVE FAKE.GET reg_case_k
+        set observe [$rd read]
+        assert_equal [lindex $observe 0] "observe"
+
+        $rd UNOBSERVE [lindex $observe 2]
+        $rd read
+        $rd close
+        r DEBUG observe-unregister FAKE.GET
+    }
+
+    test "OBSERVE module registry - re-registering same command returns 0 (update)" {
+        r DEBUG observe-register FAKE.GET
+        set isnew [r DEBUG observe-register FAKE.GET]
+        assert_equal $isnew 0
+        r DEBUG observe-unregister FAKE.GET
+    }
+
+    test "OBSERVE module registry - unregister removes command from registry" {
+        r SELECT 0
+        r SET reg_unreg_k "value"
+
+        r DEBUG observe-register FAKE.GET
+        r DEBUG observe-unregister FAKE.GET
+
+        # After unregister, OBSERVE should fail again
+        assert_error "*OBSERVE not supported*" {r OBSERVE FAKE.GET reg_unreg_k}
+    }
+
+    test "OBSERVE module registry - unregister is a no-op for unknown command" {
+        # Must not crash or error when unregistering something never registered
+        r DEBUG observe-unregister NEVER.REGISTERED
+    }
 }
