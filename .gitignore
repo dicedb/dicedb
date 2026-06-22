@@ -41,6 +41,7 @@ Makefile.dep
 .ccls
 .ccls-cache/*
 compile_commands.json
+proxy/dicedb-proxy
 redis.code-workspace
 .cache
 .cscope*
